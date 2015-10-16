@@ -1,5 +1,5 @@
 start DX10(parmfile,option,client,retcode)
- %version 1.2.3 10/08/2015
+ %version 1.2.4 10/16/2015
  $looplimit = 0
  parmfile is x
  option   is x
@@ -167,6 +167,9 @@ start DX10(parmfile,option,client,retcode)
 
  staff_dx_dct        is b
  %global staff_dx_dct
+
+ allow_discharge     is x
+ %global allow_discharge
  
  if parmfile !dp
   parmfile = "DX10"
@@ -612,9 +615,12 @@ function Page1() is null
   $table($funcname,,table_nobgcolor)
    $row()
     $col("center")$text("Diagnosis Date", "datatag")$textbox(c_dx10_dt,"CAL",10,6)
-    $col("center")$text("Reason", "datatag")$radio(c_dx10_reason, "Admitting", "1")
-                                            $radio(c_dx10_reason, "Interim", "2")
+    $col("center")$text("Reason", "datatag")$radio(c_dx10_reason, "Admission", "1")
+                                            $radio(c_dx10_reason, "Reevaluation", "2")
                                             $radio(c_dx10_reason, "Death", "3")
+                                            if allow_discharge = "Y" then
+                                             $radio(c_dx10_reason, "Discharge", "4")
+                                            endif
     $col("center")$text("Status", "datatag")$radio(c_dx10_stat, "Confirmed", "C")
                                             $radio(c_dx10_stat, "Provisional", "P")											
   $endtable($funcname)											   
@@ -896,8 +902,18 @@ function Page2() is null
   $table($funcname,,table_nobgcolor)
    $row()
     $col("center")$text("Diagnosis Date: ")$text(c_dx10_dt)
-    $col("center")$text("Reason: ")$text($dct(55,c_dx10_reason))
-    $col("center")$text("Status: ")$text($dct(2088,c_dx10_stat))
+    $col("center")$text("Reason: ")
+    select c_dx10_reason
+      case "1"   $text("Admission")
+      case "2"   $text("Reevaluation")
+      case "3"   $text("Death")
+      case "4"   $text("Discharge")
+    endselect
+    $col("center")$text("Status: ")
+    select c_dx10_stat
+      case "C"   $text("Confirmed")
+      case "P"   $text("Provisional")
+    endselect
    if c.bd dp
     $row()
      $col("center")$text("Birth Date:")$text(c.bd)
