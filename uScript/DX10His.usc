@@ -1,0 +1,419 @@
+'Display Diagnosis History - Taken from usbdxhist2 written by Wendy on 8/1/05
+	'Using a DBSEARCH to select one consumer and display all the          
+	'Dx history entered for this consumer.
+'Author Eric Roberts @ StarCare with contributions from Rob Beckham's original DX10His - 09/29/15
+'Date 10/05/15
+
+'The goal of this program is to display the Participants ENTIRE diagnosis history, including both ICD9 and ICD10 diagnoses, based on the 
+'parmfile passed in.
+
+%allow_nonmapped_io
+
+'-----Internal|State version'
+%version 01.00.001 10/14/15
+
+start DX10His(parmfile,option,client,retcode)
+
+%include c_cldef
+%include c_clget
+%include c_incmaps
+
+$looplimit = 0
+
+$trace("path", "/c1/RAUT/SCRIPT/S/DX10HisTrace")
+
+passoption 				is x	'load the option variable with UID for selected record
+
+DiagsReturned[,]		is x	'array for capturing the display data
+'** check boxes 
+diagview[]				is n
+diagvoid[]				is x
+diagupdate[]			is x
+
+color 		            is i    			 
+action					is x
+vcnt					is n
+rc2						is n
+dx10done				is x
+step					is i
+s.fn                	is x                	
+s.ln					is x
+s.profile				is x
+staffname               is x
+uid						is x
+canvoid[]				is x	'array list of Group codes that can void
+canupdate[]				is x	'array list of Group codes that can update
+canDE[]					is x	'array list of Group codes that can do Data Entry in DX10
+canPRM[]				is x	'array list of Group codes that can do Clinician in DX10
+canSeeVoid[]			is x	'array list of Group codes that can see voided diagnoses
+Icanvoid				is x    'can this user void?
+Icanupdate				is x	'can this user update?
+IcanDE					is x	'can this user use DX10DE parmfile?
+IcanPRM					is x	'can this user use DX10PRM parmfile?
+IcanSee					is x	'can this user see voids?
+whocanvoid				is x	'parm passed in from parmfile
+whocanupdate			is x	'parm passed in from parmfile
+whocanDE				is x	'parm passed in from parmfile
+whocanPRM				is x	'parm passed in from parmfile
+seethevoid   			is x	'parm passed in from parmfile
+
+lib-dx					is b
+optionsave				is x 	'save incoming option variable
+didanything				is x    'Did the user just View or actually make a change?
+
+groupmembership[]   	is x
+groupaccess[]       	is x
+
+if parmfile !dp			'Just in case default
+parmfile = "DX10HIS"
+endif
+
+rc = $loadlib(lib-dx, "lib_DX10")
+
+optionsave = option 		'We will reset the variable when we're done calling the detail displays
+
+getparm(parmfile)
+getoption(option)
+
+'$trace("ON")
+
+(void)$getopergroups($oper, groupmembership[], groupaccess[])
+
+Icanvoid = "N"		'start with No You Cant
+if whocanvoid dp
+	$parsem(whocanvoid,1,"|",canvoid[])
+	step = 0
+		do while ++step <= $maxarray(groupmembership[]) and Icanvoid = "N"
+			'Can the User void a diagnosis
+			rc = $find(groupmembership[step], canvoid[], 1, "F")
+            if rc > 0
+				Icanvoid = "Y"		'if Group code is in array, set to Yes
+			endif
+		enddo
+endif
+
+Icanupdate = "N"	'start with No You Cant update at all
+IcanPRM = "N"		'start with No You Cant do PRM mode
+IcanDE = "N"		'start with No You Cant do DE mode
+if whocanupdate dp
+	$parsem(whocanupdate,1,"|",canupdate[])
+	step = 0
+		do while ++step <= $maxarray(groupmembership[]) and Icanupdate = "N"
+			'Can the User do updates to a diagnosis?
+			rc = $find(groupmembership[step], canupdate[], 1, "F")
+            if rc > 0
+				Icanupdate = "Y"	'if Group code is in array, set to Yes - then see if they can PRM or DE
+				'if the User can do updates - can they use Data Entry mode or PRM mode?
+				if whocanPRM dp		'check for PRM mode first
+					$parsem(whocanPRM,1,"|",canPRM[])
+					step = 0
+						do while ++step <= $maxarray(groupmembership[]) and IcanPRM = "N"
+							rc = $find(groupmembership[step], canupdate[], 1, "F")
+            				if rc > 0
+								IcanPRM = "Y"	'if Group code is in array, set to Yes
+							endif
+						enddo
+				endif	'whocanPRM dp
+				if IcanPRM = "N" and whocanDE dp	'they cant PRM and we do have DE entries to check against
+					$parsem(whocanDE,1,"|",canDE[])
+					step = 0
+						do while ++step <= $maxarray(groupmembership[]) and IcanDE = "N"
+							rc = $find(groupmembership[step], canDE[], 1, "F")
+            				if rc > 0
+								IcanDE = "Y"	'if Group code is in array, set to Yes
+							endif
+						enddo
+				endif	'IcanPRM = "N" and whocanDE dp
+			endif	'rc > 0 for $find(groupmembership[step], canupdate[], 1, "F")
+		enddo	'++step <= $maxarray(groupmembership[]) and Icanupdate = "N"
+endif	'whocanupdate dp
+
+IcanSee = "N"		'start with No You Cant see voids
+if seethevoid dp
+	$parsem(seethevoid,1,"|",canSeeVoid[])
+	step = 0
+		do while ++step <= $maxarray(groupmembership[]) and IcanSee = "N"
+			'Can the User see a voided diagnosis
+			rc = $find(groupmembership[step], canSeeVoid[], 1, "F")
+            if rc > 0
+				IcanSee = "Y"		'if Group code is in array, set to Yes
+			endif
+		enddo
+endif
+'******************************************SET FONT STYLES**********************
+$setstyle(".pb", "page-break-before:always;")
+$setstyle(".a8", "font-family:arial", "font-size:8pt", "color:black")
+$setstyle(".a9rb", "font-family:arial", "font-size:9pt", "color:red","font-weight:bold")
+$setstyle(".a9b", "font-family:arial", "font-size:9pt", "color:blue")
+$setstyle(".a9bb", "font-family:arial", "font-size:9pt", "color:blue","font-weight:bold")
+$setstyle(".a9bbu", "font-family:arial", "font-size:9pt", "color:blue","font-weight:bold", "font-style:underline")
+$setstyle(".a10", "font-family:arial", "font-size:10pt", "color:black")
+$setstyle(".a10b", "font-family:arial", "font-size:10pt", "color:black","font-weight:bold")
+$setstyle(".a11", "font-family:arial", "font-size:11pt", "color: whitesmoke")
+$setstyle(".a11b", "font-family:arial", "font-size:11pt", "color: #FA665D")
+
+'BEGIN PROCESSING
+Begin:	'Come back here if anything changed
+step = 0
+color = 0  
+
+$clear(DiagsReturned[,],diagview[],diagvoid[],diagupdate[])
+
+' UPDATE CLIENT DATE FOR PORTAL - Daniel L. Smith
+if client !dp
+	client = $regid
+else
+	$regid = client
+endif
+
+didanything = "N"	'Set flag before loading arrays
+
+lib-dx:DXGet(parmfile,option,$regid,DiagsReturned[,])	'go get diagnoses
+					
+					'DiagsReturned[row,1] = Who Diagnosed it 
+					'DiagsReturned[row,2] = Who Entered it
+					'DiagsReturned[row,3] = ICD 9 or 10
+					'DiagsReturned[row,4] = Diagnosis date
+					'DiagsReturned[row,5] = Diagnosis code
+					'DiagsReturned[row,6] = Diagnosis description
+					'DiagsReturned[row,7] = ICD10-Category/ICD9-Action
+					'DiagsReturned[row,8] = Axis
+					'DiagsReturned[row,9] = GAF
+					'DiagsReturned[row,10] = Primary Axis
+					'DiagsReturned[row,11] = "Y" or "N"		yes is first diagnosis from ICD record
+					'DiagsReturned[row,12] = UID for record
+					'DiagsReturned[row,13] = status
+
+Redisplay:	'Come back here if only View mode was selected
+
+$submitopt("off","Process Selections")
+$cancelopt("off", "Done")
+
+$form("f2")
+$setformtimeout(60)
+%include c_clformheader 
+'TITLE INFO
+$tag("<CENTER>")
+$style("datatag")
+$text("Diagnosis History","H1")
+$tag("</CENTER>")
+$br(2)
+
+$table("t2", ,"border='1' width='100%'")
+
+$row(, "align='center'")
+
+    $col("center","center",,,,"bgcolor='#223E7f'") $text("View","a11")
+	if Icanvoid = "Y" 	
+		$col("center","center",,,,"bgcolor='#223E7f'") $text("VOID","a11b") 	
+	endif
+	if Icanupdate = "Y"	
+		$col("center","center",,,,"bgcolor='#223E7f'") $text("Update","a11b") 	
+	endif
+	$col("center","center",,,,"bgcolor='#223E7f'") $text("Dx Date","a11")
+	$col("center","center",,,,"bgcolor='#223E7f'") $text("Dx Cat.","a11")
+	$col("center","center",,,,"bgcolor='#223E7f'") $text("Diagnosis","a11")
+	$col("center","center",,,,"bgcolor='#223E7f'") $text("Desc.","a11")
+	$col("center","center",,,,"bgcolor='#223E7f'") $text("Legacy Axis","a11")
+	$col("center","center",,,,"bgcolor='#223E7f'") $text("ICD","a11")
+	$col("center","center",,,,"bgcolor='#223E7f'") $text("Cur. GAF","a11")
+	$col("center","center",,,,"bgcolor='#223E7f'") $text("SRC Dx STAFF","a11")
+
+step = 0
+
+do while ++step <= $maxarray(DiagsReturned[,])	
+
+    If color = 0 then
+       color = 1
+    else
+       color = 0
+    endif
+
+    if color = 0 then
+	    $row(, "align='center' bgcolor='#ffffff'")
+    else
+   		$row(, "align='center' bgcolor='#eeeeee'")
+    endif      
+
+	if (IcanSee = "Y" and DiagsReturned[step,13] = "V") or DiagsReturned[step,13] <> "V"		'Only certain people can see voids
+	                                              
+	$col("center")	'Load view checkbox 
+		if DiagsReturned[step,11] = "Y"		'Display first entry of each record	
+			diagview[step] = DiagsReturned[step,4]	'this leaves the checkbox unchecked	
+			$checkbox(diagview[step],,DiagsReturned[step,4])
+		endif
+
+	if DiagsReturned[step,11] = "Y"	and DiagsReturned[step,3] = "10" and DiagsReturned[step,13] <> "V"	'Display first entry of each record	
+		if Icanvoid = "Y"
+			$col("center")
+			$checkbox(diagvoid[step],,DiagsReturned[step,11])	'If user can void
+		endif
+		if Icanupdate = "Y"
+			$col("center")
+			$checkbox(diagupdate[step],,DiagsReturned[step,11])	'If user can update
+		endif
+	else
+		if Icanvoid = "Y"
+			$col("center")
+				if DiagsReturned[step,11] = "Y"	and DiagsReturned[step,13] = "V"
+					$text("Void","a11b")
+				endif
+		endif
+		if Icanupdate = "Y"
+			$col("center")
+		endif
+	endif
+			
+	$col("center")	'Diagnosis date
+		if DiagsReturned[step,11] = "Y"		'Display first entry of each record	
+			if DiagsReturned[step,3] = "10"
+				$text(DiagsReturned[step,4],"a9rb")
+			else
+				$text(DiagsReturned[step,4],"a9bb")
+			endif
+		endif
+
+	$col("center")	'Primary axis
+		'if dxstaf[step] dp
+		if DiagsReturned[step,3] = "10"
+			$text(DiagsReturned[step,7],"a9rb")
+		else
+			$text(DiagsReturned[step,7],"a9bb")
+		endif
+		'endif		
+
+	$col("center")	'Diagnosis code
+		if DiagsReturned[step,3] = "10"
+			$text(DiagsReturned[step,5],"a9rb")
+		else
+			$text(DiagsReturned[step,5],"a9bb")
+		endif
+
+	$col("center")	'Diagnosis description
+		if DiagsReturned[step,3] = "10"
+			$text(DiagsReturned[step,6],"a9rb")
+		else
+			$text(DiagsReturned[step,6],"a9bb")
+		endif
+
+	$col("center")	'Legacy axis
+		if DiagsReturned[step,3] = "10"
+			$text(DiagsReturned[step,8],"a9rb")
+		else
+			$text(DiagsReturned[step,8],"a9bb")
+		endif
+
+	$col("center")	'ICD Level
+		if DiagsReturned[step,3] = "10"
+			$text(DiagsReturned[step,3],"a9rb")
+		else
+			$text(DiagsReturned[step,3],"a9bb")
+		endif
+
+	$col("center")	'GAF score
+		if DiagsReturned[step,11] = "Y"		'Display first entry of each record	
+			if DiagsReturned[step,3] = "10"
+				$text(DiagsReturned[step,9],"a9rb")
+			else
+				$text(DiagsReturned[step,9],"a9bb")
+			endif
+		endif
+
+	$col("center")	'Diagnosed by
+		if DiagsReturned[step,11] = "Y"		'Display first entry of each record	
+			rc = $dbread(03,DiagsReturned[step,1],s.ln,s.fn)
+			staffname = DiagsReturned[step,2] +  " " + s.fn + " " + s.ln
+			if DiagsReturned[step,3] = "10"
+				$text(staffname,"a9rb")
+			else
+				$text(staffname,"a9bb")
+			endif
+		endif
+
+	endif		'(IcanSee = "Y" and DiagsReturned[step,13] = "V") or DiagsReturned[step,13] <> "V"
+
+enddo
+
+$endtable("t2")
+
+%include c_pbutton
+$sendform("f2")
+$endform("f2")
+
+if $endbutton = "TIME"
+	goto Begin
+elseif $endbutton = "SUBMIT" then
+	gosub ProcessCheckBoxes		'Process selected diagnosis based on which box is checked
+	if didanything = "Y" 	'We voided or updated, so we will need to reload
+		goto Begin
+	else                    'Otherwise we can just redisplay what we have
+		goto Redisplay
+	endif
+elseif $endbutton = "CANCEL"
+	goto TheEnd
+endif
+
+ProcessCheckBoxes:
+
+$clear(vcnt)
+
+do while ++vcnt <= $maxarray(DiagsReturned[,])
+
+	if diagview[vcnt] dp		'View box checked
+
+		passoption = option + "UIDpassed`" + DiagsReturned[vcnt,12] + ";"	'Set option variable to include UID	
+		option = passoption
+
+		if DiagsReturned[vcnt,3] = "9" 		'ICD9 
+
+			call "DX09" ("DX10HIS",option,$regid,DiagsReturned[vcnt,12])	
+
+			if DiagsReturned[vcnt,12] = 9.999999	
+			goto TheEnd
+			endif
+
+		else	'diagicd[vcnt] <> "9"
+
+		'DX10 Display
+ 
+			call "DX10" ("DX10VO",option,$regid,retcode)	
+
+		endif	'diagicd[vcnt] = "9"
+		
+		option = optionsave		'reset option variable to original content
+		
+	elseif diagvoid[vcnt] dp		'Void box checked
+	
+		didanything = "Y"	'Since we did something, we will need to reload the array
+	
+		lib-dx:voidClientDx($regid,DiagsReturned[vcnt,12],$today)
+		
+	elseif diagupdate[vcnt] dp		'Update box checked 
+	
+		didanything = "Y"	'Since we did something, we will need to reload the array
+	
+		passoption = option + "UIDpassed`" + DiagsReturned[vcnt,12] + ";"	'Set option variable to include UID	
+		option = passoption
+		
+		if IcanPRM = "Y"
+			call "DX10" ("DX10PRM",option,$regid,retcode)	
+		elseif IcanDE = "Y"
+			call "DX10" ("DX10DE",option,$regid,retcode)
+		endif
+		
+		option = optionsave		'reset option variable to original content
+		
+	endif	'diagview[vcnt] dp
+
+enddo	'vcnt <= $maxarray(dxdate[])
+
+goback
+
+TheEnd:
+end DX10His
+
+%include c_func-lib
+%include inc_GetParm
+%include inc_GetOption
+
+

@@ -19,13 +19,15 @@ start DX10(parmfile,option,client,retcode)
  %define col_color_multi "bgcolor='LightGrey'"  
  %global client,retcode
  %global SHOWLEGAX,10DOTTED,9DOTTED,CONVLEGC,PULLABLFW,SHOWABL
- %global UniqID,ICD_Code,ICD_Code_DotNt,ICD_Description,ICD_Code2,ICD_Code_DotNt2,ICD_Description2,DSM_4_Axis,Approximate,NoMap,Combination,Scenario,ChoiceList,DX_Cat,TermSearch,EffDt,EndDt
+ %global UniqID,ICD_Code,ICD_Code_DotNt,ICD_Description,ICD_Code2,ICD_Code_DotNt2,ICD_Description2,DSM_4_Axis,Approximate,NoMap
+ %global Combination,Scenario,ChoiceList,DX_Cat,TermSearch,EffDt,EndDt
  %global Selection,index ,lookup_btn,up_btn,down_btn,delete_btn
  %global c_dx10_icd10,c_dx10_icd10_des,c_dx10_icd9,c_dx10_icd9_des, c_dx10_legax,c_dx10_dxcat
  %global c_dx10_dxrank,next_index,prev_index,curr_index,axis1_10_dx,axis2_10_dx,c_dx10_uniq
  %global axis3_10_dx,axis1_10_desc,axis2_10_desc,axis3_10_desc,comp_axis1_10_dx
  %global comp_axis2_10_dx,comp_axis3_10_dx,comp_axis1_10_ds,comp_axis2_10_ds,comp_axis3_10_ds
- %global c_dx10_a4_supgrp,c_dx10_a4_socenv,c_dx10_a4_edu,c_dx10_a4_occ,c_dx10_a4_housng,c_dx10_a4_eco,c_dx10_a4_health,c_dx10_a4_legal,c_dx10_a4_psyenv,c_dx10_a4_none,c_dx10_a5_gaf,c_dx10_curr_abl,c_dx10_pot_abl,c_dx10_pimary_ax
+ %global c_dx10_a4_supgrp,c_dx10_a4_socenv,c_dx10_a4_edu,c_dx10_a4_occ,c_dx10_a4_housng,c_dx10_a4_eco,c_dx10_a4_health,c_dx10_a4_legal
+ %global c_dx10_a4_psyenv,c_dx10_a4_none,c_dx10_a5_gaf,c_dx10_curr_abl,c_dx10_pot_abl,c_dx10_pimary_ax
  %global c_dx10_dt,c_dx10_reason,c_dx10_a5_pgaf,c_dx10_comment,c_dx10_stat
  %global c_dx10_iq_score, c_dx10_iq_date, c_dx10_iq_test, c_dx10_sq_score, c_dx10_sq_date, c_dx10_sq_test
  %global errors, RequireABL
@@ -171,14 +173,18 @@ start DX10(parmfile,option,client,retcode)
  allow_discharge     is x
  %global allow_discharge
  
+ UIDpassed		 is x 				'ER001
+ UIDid			 is uid				'ER001
+ %global UIDpassed,UIDid			'ER001
+ 
  if parmfile !dp
   parmfile = "DX10"
  endif
 
  Page = "OnLoad"
  if $regid !dp
-  if client dp
-   $regid = client
+   if client dp
+    $regid = client
   else
    $regid = {"lib_txaceUI"}GetClientID()
    if $regid !dp
@@ -229,8 +235,9 @@ start DX10(parmfile,option,client,retcode)
                         elseif $maxarray(delete_btn[]) > 0
 			             curr_index = $maxarray(delete_btn[])  
 			             prev_index = curr_index - 1
-						 (void)$arrremove(c_dx10_dxrank[curr_index],1,c_dx10_uniq[],c_dx10_legax[],c_dx10_icd10[],c_dx10_icd9[],c_dx10_dxcat[],c_dx10_icd10_des[],c_dx10_icd9_des[],axis1_10_dx[],axis1_10_desc[],
-						 axis2_10_dx[],axis2_10_desc[],axis3_10_dx[],axis3_10_desc[],selection[])
+						 (void)$arrremove(c_dx10_dxrank[curr_index],1,c_dx10_uniq[],c_dx10_legax[],c_dx10_icd10[],c_dx10_icd9[],c_dx10_dxcat[],
+						 c_dx10_icd10_des[],c_dx10_icd9_des[],axis1_10_dx[],axis1_10_desc[],axis2_10_dx[],axis2_10_desc[],axis3_10_dx[],
+						 axis3_10_desc[],selection[])
 			             index = prev_index
 			             do while index++ < $maxarray(c_dx10_legax[])
 			              c_dx10_dxrank[index] = c_dx10_dxrank[index] - 1
@@ -341,6 +348,10 @@ function Onload(parmfile, option) is x
  dx_dst = $uc(dx_dst)
  $setvarname(creds_dst, creds_dst)
  $setvarname(dx_dst, dx_dst)
+ 
+ if UIDpassed dp						'ER001
+	UIDid = UIDpassed					'ER001
+ endif 									'ER001
 '****************************
 'do the security(void)
  (void)$getopergroups($oper, groupmembership[], groupaccess[])
@@ -411,12 +422,26 @@ function Onload(parmfile, option) is x
  {"lib_DX10"}Set_Sql(o_user, o_pass, o_ds, o_db, icd10_table, icd9_table)
 
  rc = $dbread(2,$regid,c.fn,c.mn,c.ln,c.bd)
- rc = $dbread(2,$regid,dx10_dstlist)
- c_dx10_a5_pgaf = {"lib_DX10"}PreviousGAF(icd9_gaf_dst)
+ 'rc = $dbread(2,$regid,dx10_dstlist)			ER001
+ 
+'ER001 ---------- 
+ 
+	if UIDid dp 	'if UID has been passed in - find that record
+		rc = $dbreaduid(UIDid,2,$regid,dx10_dstlist)
+	else			'Otherwise we just get the most recent diagnosis
+		rc = $dbread(2,$regid,dx10_dstlist)
+	endif
+	
+'ER001 ----------  
+ if OnLoad <> "VIEW"	'ER001		
+ 	c_dx10_a5_pgaf = {"lib_DX10"}PreviousGAF(icd9_gaf_dst) 	
+ endif
  if c.dx10.dt dp and c.dx10.converted != "Y"
-  If PromptPullFW(PULLFW, ForcePullFw) = "Y" 
+  If PromptPullFW(PULLFW, ForcePullFw) = "Y"	'If user or program selected Y - load all the work fields	ER001 
    index = 1
-   $clear(c.dx10.dt)
+   	if UIDid !dp		'For view/update diagnosis - leave date 	ER001
+   		$clear(c.dx10.dt)	
+	endif				'ER001
    c_dx10_dxrank[index]    = c.dx10.dxrank.1
    c_dx10_uniq[index]      = c.dx10.uniq.1 
    c_dx10_dxrank[++index]  = c.dx10.dxrank.2
@@ -460,7 +485,13 @@ function Onload(parmfile, option) is x
    c_dx10_a4_legal         = c.dx10.a4.legal 
    c_dx10_a4_psyenv        = c.dx10.a4.psyenv
    c_dx10_a4_none          = c.dx10.a4.none  
- '  c_dx10_a5_gaf           = c.dx10.a5.gaf   
+if UIDid dp 	'If working with existing diagnosis - load these specific display fields 	ER001
+	c_dx10_a5_gaf           = c.dx10.a5.gaf   
+	c_dx10_dt				= c.dx10.dt
+	c_dx10_reason			= c.dx10.reason	
+	c_dx10_staff			= c.dx10.staff
+	c_dx10_comment			= c.dx10.comment
+endif			'ER001
    c_dx10_curr_abl         = c.dx10.curr.abl 
    c_dx10_pot_abl          = c.dx10.pot.abl
    c_dx10_iq_score         = c.dx10.iq.score
@@ -510,7 +541,7 @@ function Onload(parmfile, option) is x
     c_dx10_icd10[index] = ICD_Code
     c_dx10_icd9[index]  = ICD_Code2
     c_dx10_dxcat[index] = DX_Cat
-   enddo 
+	 enddo 
    ResortDXRecord()
   else
    $clear(c.dx10.rh,c.dx10.staff,c.dx10.entstaff,c.dx10.dt,c.dx10.time,c.dx10.entdt,c.dx10.enttm,c.dx10.caredt,c.dx10.reason,c.dx10.expire,c.dx10.pimary.ax,
@@ -537,7 +568,7 @@ function Onload(parmfile, option) is x
   c.dx10.icd10.13,c.dx10.icd9.13,c.dx10.legax.13,c.dx10.dxcat.13,c.dx10.dxrank.13,c.dx10.uniq.13,c.dx10.icd10.14,c.dx10.icd9.14,c.dx10.legax.14,c.dx10.dxcat.14,c.dx10.dxrank.14,c.dx10.uniq.14,
   c.dx10.icd10.15,c.dx10.icd9.15,c.dx10.legax.15,c.dx10.dxcat.15,c.dx10.dxrank.15,c.dx10.uniq.15,c.dx10.icd10.16,c.dx10.icd9.16,c.dx10.legax.16,c.dx10.dxcat.16,c.dx10.dxrank.16,c.dx10.uniq.16,
   c.dx10.a4.supgrp,c.dx10.a4.socenv,c.dx10.a4.edu,c.dx10.a4.occ,c.dx10.a4.housng,c.dx10.a4.eco,c.dx10.a4.health,c.dx10.a4.legal,c.dx10.a4.psyenv,c.dx10.a4.none,c.dx10.a5.gaf,c.dx10.curr.abl,c.dx10.pot.abl,
-   c.dx10.iq.score, c.dx10.iq.date, c.dx10.iq.test, c.dx10.sq.score, c.dx10.sq.date, c.dx10.sq.test,
+  c.dx10.iq.score, c.dx10.iq.date, c.dx10.iq.test, c.dx10.sq.score, c.dx10.sq.date, c.dx10.sq.test,
   c.dx10.comment,c.dx10.snapid,c.dx10.isn,c.dx10.stat)
  endif 
 end OnLoad 
@@ -610,7 +641,11 @@ function Page1() is null
  $cancelopt("off","Cancel")
  $form($funcname)
  $br(){"lib_txaceUI"}ClientPageHeader($regid)
-  $br()$text("{center}ICD-10 Diagnosis Entry{/center}","H1")  
+ if UIDid !dp		'ER001 - no UID passed so this is entry
+  	$br()$text("{center}ICD-10 Diagnosis Entry{/center}","H1")
+  else				'ER001 - We got a UID so this is an update
+  	$br()$text("{center}ICD-10 Diagnosis Update{/center}","H1")
+  endif				'ER001  
   $br()
   $table($funcname,,table_nobgcolor)
    $row()
@@ -627,7 +662,6 @@ function Page1() is null
   if mode = "DATAENTRY"
    $br(2)$text("Diagnosis Staff: ","datatag")$textbox(c_dx10_staff ,"DB``03",6,,"Y")$editmsg(c_dx10_staff )
   endif  
-
   $br(2)
   $fieldset("Diagnosis Codes",,"datatag")
    $br()$submit(lookup_btn,"Lookup")
@@ -900,6 +934,12 @@ function Page2() is null
   $br(2)$text("{center}ICD-10 Diagnosis Record{/center}","H1")
   $br()
   $table($funcname,,table_nobgcolor)
+  reasondesc is x
+  select c_dx10_reason
+  	case "1"	reasondesc = "Admitting"
+	case "2"	reasondesc = "Interim"
+	case "3"	reasondesc = "Death"
+	endselect
    $row()
     $col("center")$text("Diagnosis Date: ")$text(c_dx10_dt)
     $col("center")$text("Reason: ")
@@ -914,6 +954,7 @@ function Page2() is null
       case "C"   $text("Confirmed")
       case "P"   $text("Provisional")
     endselect
+
    if c.bd dp
     $row()
      $col("center")$text("Birth Date:")$text(c.bd)
@@ -1141,9 +1182,12 @@ function Validate1() is i
  if c_dx10_dt > $today
   (void)$arrpush(errors[],"The Diagnosis Date cannot be future dated")
  endif
- if last_date dp and last_date > c_dx10_dt
-  (void)$arrpush(errors[],`"Diagnosis Date cannot be older than the current diagnosis record dated {u}{b}" + $castx(last_date) + "{/b}{/u}"`)  
- endif
+ 
+ if UIDid !dp	'Only check for prior dating if we're creating a new record, not updating and existing one	ER001
+ 	if last_date dp and last_date > c_dx10_dt
+ 	 (void)$arrpush(errors[],`"Diagnosis Date cannot be older than the current diagnosis record dated {u}{b}" + $castx(last_date) + "{/b}{/u}"`)  
+ 	endif
+ endif			'ER001
 
 'R-01-06
  if c_dx10_dt < c.bd
@@ -1378,7 +1422,7 @@ function SaveData() is i
  c.dx10.rh[effd] = c_dx10_dt
  NewUID = c.dx10.rh[uid] 
  c.dx10.entstaff = $operstaffid
- if mode = "DATAENTRY"
+ if mode = "DATAENTRY" or UIDid dp			'ER001 - if updating a diagnosis, the diagnosing staff shouldnt change
   c.dx10.staff = c_dx10_staff 
  else
   c.dx10.staff = $operstaffid 
@@ -1727,10 +1771,26 @@ function SaveData() is i
    c.dx10.uniq.16   = UniqID
   endif  
 
-  if dosave = "Y"
-   $dblock()
-   SaveData = $dbpoint(2,$regid,c.dx10.rh)
-   SaveData = $dbadddst(2,$regid,dx10_dstlist) 
+  if dosave = "Y"		'ER001 - Here we go, using the functions instead of the dbadddst   
+   '$dblock()
+   'SaveData = $dbpoint(2,$regid,c.dx10.rh)
+   'SaveData = $dbadddst(2,$regid,dx10_dstlist) 
+   
+   if UIDid dp		'ER001 - Because the user is updating the diagnosis - this function creates a new record, then voids the old one
+   
+   {"lib_DX10"}updateClientDx(UIDid, $regid, c.dx10.dt, c.dx10.staff, c.dx10.dt, c.dx10.time, c.dx10.entdt, c.dx10.enttm, c.dx10.expire, c.dx10.reason, 
+   c.dx10.stat, c.dx10.pimary.ax,c_dx10_uniq[],c.dx10.comment,10dotted, 9dotted,c.dx10.a4.supgrp, c.dx10.a4.socenv, c.dx10.a4.edu, c.dx10.a4.occ, 
+   c.dx10.a4.housng, c.dx10.a4.eco, c.dx10.a4.health, c.dx10.a4.legal, c.dx10.a4.psyenv, c.dx10.a4.none, c.dx10.a5.gaf, c.dx10.curr.abl, 
+   c.dx10.pot.abl,c.dx10.iq.score,c.dx10.iq.date,c.dx10.iq.test,c.dx10.sq.score,c.dx10.sq.date,c.dx10.sq.test, c.dx10.snapid, c.dx10.converted)
+    
+   else				'Write a new diagnosis record
+   
+   {"lib_DX10"}putClientDx(UIDid, $regid, $today, c.dx10.staff, c.dx10.dt, c.dx10.time, c.dx10.entdt, c.dx10.enttm, c.dx10.expire, c.dx10.reason, 
+   c.dx10.stat,c.dx10.pimary.ax, c_dx10_uniq[], c.dx10.comment, 10dotted, 9dotted, c.dx10.a4.supgrp, c.dx10.a4.socenv, c.dx10.a4.edu, c.dx10.a4.occ, 
+   c.dx10.a4.housng, c.dx10.a4.eco, c.dx10.a4.health, c.dx10.a4.legal, c.dx10.a4.psyenv, c.dx10.a4.none, c.dx10.a5.gaf, c.dx10.curr.abl, 
+   c.dx10.pot.abl,c.dx10.iq.score,c.dx10.iq.date,c.dx10.iq.test,c.dx10.sq.score,c.dx10.sq.date,c.dx10.sq.test, c.dx10.snapid, c.dx10.converted)
+
+   endif  			'End of ER001 block 
 
   else
    SaveData = 0
@@ -1772,7 +1832,7 @@ function PromptPullFW(PULLFW, ForcePullFw) is x
 
  PromptPullFw = "N"
 
- if ForcePullFw = "Y"
+ if ForcePullFw = "Y" or UIDid dp	'ER001 - add UIDid check, if passed - force the force, and may the force be with you... 
   PromptPullFw = "Y"
   return
  endif
